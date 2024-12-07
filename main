@@ -1,0 +1,83 @@
+import matplotlib.pyplot as plt
+
+def place_plates(ax, area_width, area_height, plates):
+    # Platzierte Platten speichern
+    placed_positions = []
+
+    # Gitter initialisieren, um belegte Positionen zu verfolgen
+    grid = [[False for _ in range(int(area_width * 100))] for _ in range(int(area_height * 100))]
+
+    def can_place(x, y, plate_width, plate_height):
+        """Prüfen, ob eine Platte an einer bestimmten Position platziert werden kann."""
+        for i in range(int(plate_width * 100)):
+            for j in range(int(plate_height * 100)):
+                if x + i >= len(grid[0]) or y + j >= len(grid):
+                    return False
+                if grid[y + j][x + i]:
+                    return False
+        return True
+
+    def mark_grid(x, y, plate_width, plate_height):
+        """Markieren, dass eine Platte eine Position belegt."""
+        for i in range(int(plate_width * 100)):
+            for j in range(int(plate_height * 100)):
+                grid[y + j][x + i] = True
+
+    # Iterativer Algorithmus zur Platzierung
+    while True:
+        placed_any = False
+        for plate_name, (plate_width, plate_height) in sorted(plates.items(), key=lambda x: x[1][0] * x[1][1], reverse=True):
+            placed = False
+            for y in range(len(grid)):
+                for x in range(len(grid[0])):
+                    if can_place(x, y, plate_width, plate_height):
+                        # Platte platzieren
+                        ax.add_patch(plt.Rectangle((x / 100, y / 100), plate_width, plate_height, edgecolor='black', linewidth=1, facecolor='lightblue'))
+                        placed_positions.append((plate_name, x / 100, y / 100))
+                        mark_grid(x, y, plate_width, plate_height)
+                        placed = True
+                        placed_any = True
+                        break
+                if placed:
+                    break
+        if not placed_any:
+            break
+
+    return placed_positions
+
+# Hauptprogramm
+if __name__ == "__main__":
+    # Fläche definieren (in Metern)
+    area_width = 10  # Breite der Fläche in Metern
+    area_height = 8  # Höhe der Fläche in Metern
+
+    # Größen der Platten
+    plates = {
+        "A": (1.2, 0.5),  # Breite, Höhe
+        "B": (1.0, 0.3),
+        "C": (0.6, 0.25),
+        "D": (0.3, 0.25)
+    }
+
+    # Visualisierung der großen Fläche
+    plt.figure(figsize=(10, 8))
+    ax = plt.gca()
+    ax.add_patch(plt.Rectangle((0, 0), area_width, area_height, color='lightgrey', edgecolor='black'))
+
+    # Platten platzieren
+    placed_positions = place_plates(ax, area_width, area_height, plates)
+
+    # Achseneinstellungen
+    ax.set_xlim(0, area_width)
+    ax.set_ylim(0, area_height)
+    ax.set_aspect('equal', adjustable='box')
+    plt.title('Optimierte Platzierung der Platten in der Fläche F')
+    plt.xlabel('Breite (m)')
+    plt.ylabel('Höhe (m)')
+
+    # Visualisierung anzeigen
+    plt.show()
+
+    # Positionen ausgeben
+    for plate_name, x, y in placed_positions:
+        print(f"Platte {plate_name} platziert an Position ({x:.2f}, {y:.2f})")
