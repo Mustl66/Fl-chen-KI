@@ -1,83 +1,143 @@
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
-def place_plates(ax, area_width, area_height, plates):
-    # Platzierte Platten speichern
-    placed_positions = []
+# Klasse für die Platzierungsumgebung
+class PlacementEnv:
+    def __init__(self, area_width, area_height, plates):
+        self.area_width = area_width
+        self.area_height = area_height
+        self.plates = dict(sorted(plates.items(), key=lambda item: item[1][0] * item[1][1], reverse=True))
+        self.reset()
 
-    # Gitter initialisieren, um belegte Positionen zu verfolgen
-    grid = [[False for _ in range(int(area_width * 100))] for _ in range(int(area_height * 100))]
+    def reset(self):
+        self.grid = np.zeros((int(self.area_height * 100), int(self.area_width * 100)), dtype=bool)
+        self.placed_plates = []
+        return self._get_state()
 
-    def can_place(x, y, plate_width, plate_height):
-        """Prüfen, ob eine Platte an einer bestimmten Position platziert werden kann."""
-        for i in range(int(plate_width * 100)):
-            for j in range(int(plate_height * 100)):
-                if x + i >= len(grid[0]) or y + j >= len(grid):
-                    return False
-                if grid[y + j][x + i]:
+    def _get_state(self):
+        return np.expand_dims(self.grid, axis=-1)
+
+    def step(self, action):
+        plate_name, x, y, rotation = action
+        plate_width, plate_height = self.plates[plate_name]
+        if rotation == 90:
+            plate_width, plate_height = plate_height, plate_width
+
+        x_idx, y_idx = int(x * 100), int(y * 100)
+        width_idx, height_idx = int(plate_width * 100), int(plate_height * 100)
+
+        if self._can_place(x_idx, y_idx, width_idx, height_idx):
+            self._mark_grid(x_idx, y_idx, width_idx, height_idx)
+            self.placed_plates.append((plate_name, x, y, rotation))
+            reward = plate_width * plate_height
+            done = self._is_fully_covered()
+        else:
+            reward = -5
+            done = False
+
+        return self._get_state(), reward, done, {}
+
+    def _can_place(self, x, y, width, height):
+        if x + width > self.grid.shape[1] or y + height > self.grid.shape[0]:
+            return False
+        for i in range(height):
+            for j in range(width):
+                if self.grid[y + i, x + j]:
                     return False
         return True
 
-    def mark_grid(x, y, plate_width, plate_height):
-        """Markieren, dass eine Platte eine Position belegt."""
-        for i in range(int(plate_width * 100)):
-            for j in range(int(plate_height * 100)):
-                grid[y + j][x + i] = True
+    def _mark_grid(self, x, y, width, height):
+        for i in range(height):
+            for j in range(width):
+                self.grid[y + i, x + j] = True
 
-    # Iterativer Algorithmus zur Platzierung
-    while True:
-        placed_any = False
-        for plate_name, (plate_width, plate_height) in sorted(plates.items(), key=lambda x: x[1][0] * x[1][1], reverse=True):
-            placed = False
-            for y in range(len(grid)):
-                for x in range(len(grid[0])):
-                    if can_place(x, y, plate_width, plate_height):
-                        # Platte platzieren
-                        ax.add_patch(plt.Rectangle((x / 100, y / 100), plate_width, plate_height, edgecolor='black', linewidth=1, facecolor='lightblue'))
-                        placed_positions.append((plate_name, x / 100, y / 100))
-                        mark_grid(x, y, plate_width, plate_height)
-                        placed = True
-                        placed_any = True
-                        break
-                if placed:
-                    break
-        if not placed_any:
-            break
+    def _is_fully_covered(self):
+        return np.all(self.grid)
 
-    return placed_positions
+# Zeichne die aktuelle Platzierung
+def plot_placement(env, ax):
+    ax.clear()
+    ax.add_patch(plt.Rectangle((0, 0), env.area_width, env.area_height, color='lightgrey', edgecolor='black'))
+    for plate_name, x, y, rotation in env.placed_plates:
+        plate_width, plate_height = env.plates[plate_name]
+        if rotation == 90:
+            plate_width, plate_height = plate_height, plate_width
+        rect = patches.Rectangle((x, y), plate_width, plate_height, edgecolor='black', linewidth=1, facecolor='lightblue')
+        ax.add_patch(rect)
+        text_x = x + plate_width / 2
+        text_y = y + plate_height / 2
+        ax.text(text_x, text_y, plate_name, color='black', ha='center', va='center', fontsize=10)
+
+    ax.set_xlim(0, env.area_width)
+    ax.set_ylim(0, env.area_height)
+    ax.set_aspect('equal', adjustable='box')
+    plt.draw()
+    plt.pause(0.1)
+
+# Funktion zur Bestimmung des nächsten verfügbaren Platzes
+def find_next_best_position(env, plate_name, plate_width, plate_height):
+    for y in range(env.grid.shape[0]):
+        for x in range(env.grid.shape[1]):
+            x_float = x / 100
+            y_float = y / 100
+            if env._can_place(x, y, int(plate_width * 100), int(plate_height * 100)):
+                return x_float, y_float
+    return None, None
+
+# Funktion zur Platzierung der Platten
+def place_plates_in_order(env):
+    for plate_name in env.plates.keys():
+        plate_width, plate_height = env.plates[plate_name]
+        placed = False
+
+        for rotation in [0, 90]:
+            if rotation == 90:
+                plate_width, plate_height = plate_height, plate_width
+
+            while True:
+                x, y = find_next_best_position(env, plate_name, plate_width, plate_height)
+                if x is not None and y is not None:
+                    action = (plate_name, x, y, rotation)
+                    next_state, reward, done, _ = env.step(action)
+                    plot_placement(env, ax)  # Zeige die aktuelle Platzierung
+                    if done:  # Wenn der Platz vollständig abgedeckt ist
+                        print(f"Abdeckung abgeschlossen mit Platte {plate_name}")
+                        return True
+                    placed = True
+                else:
+                    break  # Keine Platzierung möglich in dieser Rotation
+
+        if not placed:
+            print(f"Platte {plate_name} konnte nicht platziert werden.")
+
+    if not env._is_fully_covered():
+        print("Die Fläche konnte nicht vollständig abgedeckt werden.")
 
 # Hauptprogramm
 if __name__ == "__main__":
-    # Fläche definieren (in Metern)
-    area_width = 10  # Breite der Fläche in Metern
-    area_height = 8  # Höhe der Fläche in Metern
-
-    # Größen der Platten
+    # Parameter
+    area_width = 10.6
+    area_height = 6.25
     plates = {
-        "A": (1.2, 0.5),  # Breite, Höhe
+        "A": (1.2, 0.5),
         "B": (1.0, 0.3),
         "C": (0.6, 0.25),
         "D": (0.3, 0.25)
     }
 
-    # Visualisierung der großen Fläche
-    plt.figure(figsize=(10, 8))
-    ax = plt.gca()
-    ax.add_patch(plt.Rectangle((0, 0), area_width, area_height, color='lightgrey', edgecolor='black'))
+    env = PlacementEnv(area_width, area_height, plates)
 
-    # Platten platzieren
-    placed_positions = place_plates(ax, area_width, area_height, plates)
-
-    # Achseneinstellungen
-    ax.set_xlim(0, area_width)
-    ax.set_ylim(0, area_height)
-    ax.set_aspect('equal', adjustable='box')
-    plt.title('Optimierte Platzierung der Platten in der Fläche F')
-    plt.xlabel('Breite (m)')
-    plt.ylabel('Höhe (m)')
-
-    # Visualisierung anzeigen
+    # Plot Setup
+    plt.ion()
+    fig, ax = plt.subplots(figsize=(10, 8))
     plt.show()
 
-    # Positionen ausgeben
-    for plate_name, x, y in placed_positions:
-        print(f"Platte {plate_name} platziert an Position ({x:.2f}, {y:.2f})")
+    # Platzierung der Platten
+    env.reset()
+    place_plates_in_order(env)
+
+    # Plot der Endplatzierung anzeigen
+    plot_placement(env, ax)
+    plt.ioff()
+    plt.show()
