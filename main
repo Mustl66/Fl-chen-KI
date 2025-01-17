@@ -1,227 +1,85 @@
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import tensorflow as tf
-from tensorflow.keras import layers
-from collections import deque
-import random
+from itertools import product
 
-# GPU-Speicher dynamisch zuweisen
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(e)
+# Platten-Daten
+plate_data = [
+    ("A", (1.2, 0.5)),
+    ("B", (1.0, 0.3)),
+    ("C", (0.6, 0.25)),
+    ("D", (0.3, 0.25)),
+]
+
+# Fläche
+large_area = (88.14, 18.5)  # A=10, B=5
 
 
-# Klasse für die Platzierungsumgebung
-class PlacementEnv:
-    def __init__(self, area_width, area_height, plates, sub_area_count=4):
-        self.area_width = area_width
-        self.area_height = area_height
-        self.plates = dict(sorted(plates.items(), key=lambda item: item[1][0] * item[1][1], reverse=True))
-        self.sub_area_count = sub_area_count
-        self.reset()
-
-    def reset(self):
-        self.grid = np.zeros((int(self.area_height * 100), int(self.area_width * 100)), dtype=bool)
-        self.placed_plates = []
-        # Teilen der Fläche in Subflächen
-        sub_area_width = self.area_width / np.sqrt(self.sub_area_count)
-        sub_area_height = self.area_height / np.sqrt(self.sub_area_count)
-        self.sub_areas = [(x * sub_area_width, y * sub_area_height, sub_area_width, sub_area_height)
-                          for x in range(int(np.sqrt(self.sub_area_count)))
-                          for y in range(int(np.sqrt(self.sub_area_count)))]
-        self.current_sub_area_idx = 0
-        self.current_sub_area = self.sub_areas[self.current_sub_area_idx]
-        return self._get_state()
-
-    def _get_state(self):
-        return np.expand_dims(self.grid, axis=-1).astype(np.float32)
-
-    def step(self, action):
-        plate_idx, x, y, rotation = action
-        plate_name = list(self.plates.keys())[plate_idx]
-        plate_width, plate_height = self.plates[plate_name]
-        if rotation == 1:  # 90 degrees
-            plate_width, plate_height = plate_height, plate_width
-
-        x_idx, y_idx = int(x * 100), int(y * 100)
-        width_idx, height_idx = int(plate_width * 100), int(plate_height * 100)
-
-        if self._can_place(x_idx, y_idx, width_idx, height_idx):
-            self._mark_grid(x_idx, y_idx, width_idx, height_idx)
-            self.placed_plates.append((plate_name, x, y, rotation))
-            reward = plate_width * plate_height
-            done = self._is_sub_area_filled()
-        else:
-            reward = -1
-            done = False
-
-        if done:
-            # Wenn ein Subbereich optimiert ist, zum nächsten Subbereich wechseln
-            self.current_sub_area_idx += 1
-            if self.current_sub_area_idx >= len(self.sub_areas):
-                done = self._is_fully_covered()
-            else:
-                self.current_sub_area = self.sub_areas[self.current_sub_area_idx]
-
-        return self._get_state(), reward, done, {}
-
-    def _can_place(self, x, y, width, height):
-        if x + width > self.grid.shape[1] or y + height > self.grid.shape[0]:
-            return False
-        for i in range(height):
-            for j in range(width):
-                if self.grid[y + i, x + j]:
-                    return False
-        return True
-
-    def _mark_grid(self, x, y, width, height):
-        for i in range(height):
-            for j in range(width):
-                self.grid[y + i, x + j] = True
-
-    def _is_fully_covered(self):
-        return np.all(self.grid)
-
-    def _is_sub_area_filled(self):
-        x, y, width, height = self.current_sub_area
-        sub_area_grid = self.grid[int(y * 100):int((y + height) * 100), int(x * 100):int((x + width) * 100)]
-        return np.all(sub_area_grid)
+def rotate_plate(plate):
+    """Rotiert die Platte (Breite und Höhe tauschen)."""
+    return plate[0], (plate[1][1], plate[1][0])
 
 
-# Deep Q-Network
-class DQNAgent:
-    def __init__(self, state_shape, action_space, gamma=0.99, epsilon=1.0, epsilon_min=0.1, epsilon_decay=0.995,
-                 lr=0.001):
-        self.state_shape = state_shape
-        self.action_space = action_space
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
-        self.memory = deque(maxlen=2000)
-        self.model = self._build_model(lr)
+def calculate_fit(large_area, plate_data):
+    """Berechnet die beste Anordnung von Platten in einer großen Fläche ohne Überlappung."""
+    large_width, large_height = large_area
+    best_combination = []
+    max_area_covered = 0
 
-    def _build_model(self, lr):
-        model = tf.keras.Sequential([
-            layers.Conv2D(16, (3, 3), activation='relu', input_shape=self.state_shape),
-            layers.MaxPooling2D((2, 2)),
-            layers.Flatten(),
-            layers.Dense(64, activation='relu'),
-            layers.Dense(self.action_space, activation='linear')
-        ])
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr), loss='mse')
-        return model
+    for rotated_plates in product([False, True], repeat=len(plate_data)):
+        rotated_plate_data = [
+            rotate_plate(plate) if rotated else plate
+            for plate, rotated in zip(plate_data, rotated_plates)
+        ]
+        current_combination = []
+        current_area_covered = 0
+        occupied_positions = set()
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        for plate_name, (plate_width, plate_height) in rotated_plate_data:
+            for x in range(int(large_width // plate_width)):
+                for y in range(int(large_height // plate_height)):
+                    # Check if this position is free
+                    position = (x * plate_width, y * plate_height)
+                    if not any(
+                        px < position[0] + plate_width and
+                        px + pw > position[0] and
+                        py < position[1] + plate_height and
+                        py + ph > position[1]
+                        for (px, py, pw, ph) in occupied_positions
+                    ):
+                        # Add plate to this position
+                        occupied_positions.add((position[0], position[1], plate_width, plate_height))
+                        current_combination.append((plate_name, position[0], position[1], plate_width, plate_height))
+                        current_area_covered += plate_width * plate_height
 
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return random.randint(0, self.action_space - 1)
-        q_values = self.model.predict(state[np.newaxis, :])
-        return np.argmax(q_values[0])
+        if current_area_covered > max_area_covered:
+            max_area_covered = current_area_covered
+            best_combination = current_combination
 
-    def replay(self, batch_size):
-        if len(self.memory) < batch_size:
-            return
-        minibatch = random.sample(self.memory, batch_size)
-        for state, action, reward, next_state, done in minibatch:
-            target = reward
-            if not done:
-                target += self.gamma * np.amax(self.model.predict(next_state[np.newaxis, :])[0])
-            target_f = self.model.predict(state[np.newaxis, :])
-            target_f[0][action] = target
-            self.model.fit(state[np.newaxis, :], target_f, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+    return best_combination, max_area_covered
 
 
-# Hilfsfunktion: Finde benachbarte freie Plätze
-def find_adjacent_position(grid, plate_width, plate_height):
-    for y in range(grid.shape[0] - plate_height):
-        for x in range(grid.shape[1] - plate_width):
-            if not grid[y:y + plate_height, x:x + plate_width].any():
-                return x / 100, y / 100
-    return np.random.uniform(0, grid.shape[1] / 100), np.random.uniform(0, grid.shape[0] / 100)
+def plot_combination(large_area, combination):
+    """Visualisiert die beste Kombination von Platten in der großen Fläche."""
+    fig, ax = plt.subplots()
+    large_width, large_height = large_area
+    ax.set_xlim(0, large_width)
+    ax.set_ylim(0, large_height)
+    ax.set_aspect('equal')
 
+    colors = ['red', 'blue', 'green', 'yellow']
+    for i, (plate_name, x, y, plate_width, plate_height) in enumerate(combination):
+        rect = plt.Rectangle((x, y), plate_width, plate_height, color=colors[i % len(colors)], alpha=0.5)
+        ax.add_patch(rect)
+        ax.text(x + plate_width / 2, y + plate_height / 2, plate_name, color='black', ha='center', va='center')
 
-# Hauptprogramm
-if __name__ == "__main__":
-    # Parameter
-    area_width = 10.6/4
-    area_height = 6.25/4
-    plates = {
-        "A": (1.2, 0.5),
-        "B": (1.0, 0.3),
-        "C": (0.6, 0.25),
-        "D": (0.3, 0.25)
-    }
-
-    env = PlacementEnv(area_width, area_height, plates, sub_area_count=4)
-    state_shape = (env.grid.shape[0], env.grid.shape[1], 1)
-    action_space = len(plates) * 2  # Anzahl der Platten x Rotationen (0 oder 90 Grad)
-
-    agent = DQNAgent(state_shape, action_space)
-
-    episodes = 1000
-    batch_size = 16  # Reduzierte Batchgröße
-
-    # Live-Plot Setup
-    plt.ion()
-    fig, ax = plt.subplots(figsize=(10, 8))
-
-    for e in range(episodes):
-        state = env.reset()
-        total_reward = 0
-
-        for time in range(500):
-            action_idx = agent.act(state)
-            plate_idx = action_idx // 2
-            rotation = action_idx % 2
-
-            plate_name = list(plates.keys())[plate_idx]
-            plate_width, plate_height = plates[plate_name]
-            if rotation == 1:
-                plate_width, plate_height = plate_height, plate_width
-
-            x, y = find_adjacent_position(env.grid, int(plate_width * 100), int(plate_height * 100))
-
-            next_state, reward, done, _ = env.step((plate_idx, x, y, rotation))
-            agent.remember(state, action_idx, reward, next_state, done)
-            state = next_state
-            total_reward += reward
-
-            # Live-Plot Aktualisierung
-            ax.clear()
-            ax.add_patch(plt.Rectangle((0, 0), env.area_width, env.area_height, color='lightgrey', edgecolor='black'))
-            for plate_name, x_pos, y_pos, rot in env.placed_plates:
-                plate_width, plate_height = plates[plate_name]
-                if rot == 1:
-                    plate_width, plate_height = plate_height, plate_width
-                rect = patches.Rectangle((x_pos, y_pos), plate_width, plate_height, edgecolor='black', linewidth=1,
-                                         facecolor='lightblue')
-                ax.add_patch(rect)
-
-                # Platte beschriften
-                ax.text(x_pos + plate_width / 2, y_pos + plate_height / 2, plate_name, color='black', ha='center',
-                        va='center', fontsize=10)
-
-            ax.set_xlim(0, env.area_width)
-            ax.set_ylim(0, env.area_height)
-            ax.set_aspect('equal', adjustable='box')
-            plt.draw()
-            plt.pause(0.01)
-
-            if done:  # Die Episode endet, wenn alle Subflächen befüllt sind
-                print(f"Episode {e + 1}/{episodes}, Zeit: {time}, Gesamtbelohnung: {total_reward}")
-                break
-
-        agent.replay(batch_size)
-
-    plt.ioff()
+    plt.title("Beste Plattenanordnung")
+    plt.xlabel("Breite")
+    plt.ylabel("Höhe")
     plt.show()
+
+# Berechnung der besten Kombination
+best_combination, max_area_covered = calculate_fit(large_area, plate_data)
+print("Beste Kombination:", best_combination)
+print("Maximale bedeckte Fläche:", max_area_covered)
+
+# Visualisierung
+plot_combination(large_area, best_combination)
