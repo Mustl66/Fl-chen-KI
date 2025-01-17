@@ -11,11 +11,13 @@ plate_data = [
 ]
 
 # Fläche
-large_area = (18.14, 18.15)
+large_area = (18.14, 18.28)
+
 
 def rotate_plate(plate):
     """Rotiert die Platte (Breite und Höhe tauschen)."""
     return plate[0], (plate[1][1], plate[1][0])
+
 
 def calculate_fit(large_area, plate_data):
     """Berechnet die beste Anordnung von Platten in einer großen Fläche ohne Überlappung und minimiert leere Spalten."""
@@ -42,15 +44,16 @@ def calculate_fit(large_area, plate_data):
                     position = (x * plate_width, y * plate_height)
                     if position[0] + plate_width <= large_width and position[1] + plate_height <= large_height:
                         if not any(
-                            px < position[0] + plate_width and
-                            px + pw > position[0] and
-                            py < position[1] + plate_height and
-                            py + ph > position[1]
-                            for (px, py, pw, ph) in occupied_positions
+                                px < position[0] + plate_width and
+                                px + pw > position[0] and
+                                py < position[1] + plate_height and
+                                py + ph > position[1]
+                                for (px, py, pw, ph) in occupied_positions
                         ):
                             # Platte hinzufügen
                             occupied_positions.add((position[0], position[1], plate_width, plate_height))
-                            current_combination.append((plate_name, position[0], position[1], plate_width, plate_height))
+                            current_combination.append(
+                                (plate_name, position[0], position[1], plate_width, plate_height))
                             current_area_covered += plate_width * plate_height
 
         if current_area_covered > max_area_covered:
@@ -59,6 +62,7 @@ def calculate_fit(large_area, plate_data):
 
     return best_combination, max_area_covered
 
+
 def plot_combination(large_area, combination):
     """Visualisiert die beste Kombination von Platten in der großen Fläche."""
     fig = go.Figure()
@@ -66,6 +70,7 @@ def plot_combination(large_area, combination):
     # Farben für die Platten
     colors = ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e']
     for i, (plate_name, x, y, plate_width, plate_height) in enumerate(combination):
+        # Hinzufügen der Platten
         fig.add_trace(go.Scatter(
             x=[x, x + plate_width, x + plate_width, x],
             y=[y, y, y + plate_height, y + plate_height],
@@ -76,6 +81,16 @@ def plot_combination(large_area, combination):
             text=plate_name,
             hoverinfo="text",
             showlegend=False
+        ))
+
+        # Hinzufügen der Bezeichnung innerhalb der Platte
+        fig.add_trace(go.Scatter(
+            x=[x + plate_width / 2],
+            y=[y + plate_height / 2],
+            text=[plate_name],
+            mode='text',
+            showlegend=False,
+            textfont=dict(size=18, color="black")
         ))
 
     # Setze Layout für den Plot
@@ -104,6 +119,7 @@ def plot_combination(large_area, combination):
 
     # Zeige die Visualisierung
     fig.show()
+
 
 # Berechnung der besten Kombination
 best_combination, max_area_covered = calculate_fit(large_area, plate_data)
