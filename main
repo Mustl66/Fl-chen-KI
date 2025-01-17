@@ -1,6 +1,7 @@
 import plotly.graph_objects as go
 from itertools import product
 from collections import Counter
+import math
 
 # Platten-Daten
 plate_data = [
@@ -11,7 +12,7 @@ plate_data = [
 ]
 
 # Fläche
-large_area = (18.14, 18.28)
+large_area = (18.15, 15.5)
 
 
 def rotate_plate(plate):
@@ -37,9 +38,12 @@ def calculate_fit(large_area, plate_data):
         current_area_covered = 0
         occupied_positions = set()
 
+        # Versuche, die Platten zuerst an den Rändern anzulegen
+        x_start, y_start = 0, 0
         for plate_name, (plate_width, plate_height) in rotated_plate_data:
-            for x in range(int(large_width // plate_width) + 1):
-                for y in range(int(large_height // plate_height) + 1):
+            # Platten entlang der Ränder platzieren
+            for x in range(math.ceil(large_width // plate_width) + 1):
+                for y in range(math.ceil(large_height // plate_height) + 1):
                     # Position überprüfen
                     position = (x * plate_width, y * plate_height)
                     if position[0] + plate_width <= large_width and position[1] + plate_height <= large_height:
@@ -92,6 +96,16 @@ def plot_combination(large_area, combination):
             showlegend=False,
             textfont=dict(size=18, color="black")
         ))
+
+    # Hinzufügen der roten Umrandung der großen Fläche
+    fig.add_trace(go.Scatter(
+        x=[0, large_area[0], large_area[0], 0, 0],
+        y=[0, 0, large_area[1], large_area[1], 0],
+        fill="none",
+        line=dict(color="red", width=4),
+        name="Große Fläche Umrandung",
+        showlegend=False
+    ))
 
     # Setze Layout für den Plot
     fig.update_layout(
