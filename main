@@ -1,5 +1,6 @@
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from itertools import product
+from collections import Counter
 
 # Platten-Daten
 plate_data = [
@@ -10,13 +11,11 @@ plate_data = [
 ]
 
 # Fläche
-large_area = (88.14, 18.15)  # A=10, B=5
-
+large_area = (18.14, 18.15)
 
 def rotate_plate(plate):
     """Rotiert die Platte (Breite und Höhe tauschen)."""
     return plate[0], (plate[1][1], plate[1][0])
-
 
 def calculate_fit(large_area, plate_data):
     """Berechnet die beste Anordnung von Platten in einer großen Fläche ohne Überlappung und minimiert leere Spalten."""
@@ -24,7 +23,10 @@ def calculate_fit(large_area, plate_data):
     best_combination = []
     max_area_covered = 0
 
-    for rotated_plates in product([False, True], repeat=len(plate_data)):
+    # Berechnung parallelisieren
+    all_combinations = list(product([False, True], repeat=len(plate_data)))
+
+    for rotated_plates in all_combinations:
         rotated_plate_data = [
             rotate_plate(plate) if rotated else plate
             for plate, rotated in zip(plate_data, rotated_plates)
@@ -36,7 +38,7 @@ def calculate_fit(large_area, plate_data):
         for plate_name, (plate_width, plate_height) in rotated_plate_data:
             for x in range(int(large_width // plate_width) + 1):
                 for y in range(int(large_height // plate_height) + 1):
-                    # Check if this position is free
+                    # Position überprüfen
                     position = (x * plate_width, y * plate_height)
                     if position[0] + plate_width <= large_width and position[1] + plate_height <= large_height:
                         if not any(
@@ -46,7 +48,7 @@ def calculate_fit(large_area, plate_data):
                             py + ph > position[1]
                             for (px, py, pw, ph) in occupied_positions
                         ):
-                            # Add plate to this position
+                            # Platte hinzufügen
                             occupied_positions.add((position[0], position[1], plate_width, plate_height))
                             current_combination.append((plate_name, position[0], position[1], plate_width, plate_height))
                             current_area_covered += plate_width * plate_height
@@ -57,30 +59,66 @@ def calculate_fit(large_area, plate_data):
 
     return best_combination, max_area_covered
 
-
 def plot_combination(large_area, combination):
     """Visualisiert die beste Kombination von Platten in der großen Fläche."""
-    fig, ax = plt.subplots()
-    large_width, large_height = large_area
-    ax.set_xlim(0, large_width)
-    ax.set_ylim(0, large_height)
-    ax.set_aspect('equal')
+    fig = go.Figure()
 
-    colors = ['red', 'blue', 'green', 'yellow']
+    # Farben für die Platten
+    colors = ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e']
     for i, (plate_name, x, y, plate_width, plate_height) in enumerate(combination):
-        rect = plt.Rectangle((x, y), plate_width, plate_height, color=colors[i % len(colors)], alpha=0.5)
-        ax.add_patch(rect)
-        ax.text(x + plate_width / 2, y + plate_height / 2, plate_name, color='black', ha='center', va='center')
+        fig.add_trace(go.Scatter(
+            x=[x, x + plate_width, x + plate_width, x],
+            y=[y, y, y + plate_height, y + plate_height],
+            fill="toself",
+            fillcolor=colors[i % len(colors)],
+            line=dict(color="black", width=2),
+            name=plate_name,
+            text=plate_name,
+            hoverinfo="text",
+            showlegend=False
+        ))
 
-    plt.title("Beste Plattenanordnung")
-    plt.xlabel("Breite")
-    plt.ylabel("Höhe")
-    plt.show()
+    # Setze Layout für den Plot
+    fig.update_layout(
+        title="Optimale Plattenanordnung",
+        title_x=0.5,
+        title_font=dict(size=24, color="black", family="Arial"),
+        xaxis=dict(
+            range=[0, large_area[0]],
+            showgrid=False,
+            zeroline=False,
+            title="Breite (m)",
+            title_font=dict(size=16, family="Arial")
+        ),
+        yaxis=dict(
+            range=[0, large_area[1]],
+            showgrid=False,
+            zeroline=False,
+            title="Höhe (m)",
+            title_font=dict(size=16, family="Arial")
+        ),
+        plot_bgcolor="#f4f7fb",  # Modernes, klares Grau
+        paper_bgcolor="#f4f7fb",
+        showlegend=True,
+    )
+
+    # Zeige die Visualisierung
+    fig.show()
 
 # Berechnung der besten Kombination
 best_combination, max_area_covered = calculate_fit(large_area, plate_data)
 print("Beste Kombination:", best_combination)
-print("Maximale bedeckte Fläche:", max_area_covered)
+
+# Zähle, wie viele Platten jeder Art verwendet wurden
+plate_counts = Counter(plate_name for plate_name, _, _, _, _ in best_combination)
+print("Verwendete Plattenarten:")
+for plate_name, count in plate_counts.items():
+    print(f"{plate_name}: {count} Stück")
+
+# Berechnung des Prozentsatzes der abgedeckten Fläche
+large_area_size = large_area[0] * large_area[1]
+coverage_percentage = (max_area_covered / large_area_size) * 100
+print(f"Abgedeckte Fläche: {coverage_percentage:.2f}%")
 
 # Visualisierung
 plot_combination(large_area, best_combination)
