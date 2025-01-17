@@ -10,7 +10,7 @@ plate_data = [
 ]
 
 # Fläche
-large_area = (88.14, 18.5)  # A=10, B=5
+large_area = (88.14, 18.15)  # A=10, B=5
 
 
 def rotate_plate(plate):
@@ -19,7 +19,7 @@ def rotate_plate(plate):
 
 
 def calculate_fit(large_area, plate_data):
-    """Berechnet die beste Anordnung von Platten in einer großen Fläche ohne Überlappung."""
+    """Berechnet die beste Anordnung von Platten in einer großen Fläche ohne Überlappung und minimiert leere Spalten."""
     large_width, large_height = large_area
     best_combination = []
     max_area_covered = 0
@@ -34,21 +34,22 @@ def calculate_fit(large_area, plate_data):
         occupied_positions = set()
 
         for plate_name, (plate_width, plate_height) in rotated_plate_data:
-            for x in range(int(large_width // plate_width)):
-                for y in range(int(large_height // plate_height)):
+            for x in range(int(large_width // plate_width) + 1):
+                for y in range(int(large_height // plate_height) + 1):
                     # Check if this position is free
                     position = (x * plate_width, y * plate_height)
-                    if not any(
-                        px < position[0] + plate_width and
-                        px + pw > position[0] and
-                        py < position[1] + plate_height and
-                        py + ph > position[1]
-                        for (px, py, pw, ph) in occupied_positions
-                    ):
-                        # Add plate to this position
-                        occupied_positions.add((position[0], position[1], plate_width, plate_height))
-                        current_combination.append((plate_name, position[0], position[1], plate_width, plate_height))
-                        current_area_covered += plate_width * plate_height
+                    if position[0] + plate_width <= large_width and position[1] + plate_height <= large_height:
+                        if not any(
+                            px < position[0] + plate_width and
+                            px + pw > position[0] and
+                            py < position[1] + plate_height and
+                            py + ph > position[1]
+                            for (px, py, pw, ph) in occupied_positions
+                        ):
+                            # Add plate to this position
+                            occupied_positions.add((position[0], position[1], plate_width, plate_height))
+                            current_combination.append((plate_name, position[0], position[1], plate_width, plate_height))
+                            current_area_covered += plate_width * plate_height
 
         if current_area_covered > max_area_covered:
             max_area_covered = current_area_covered
