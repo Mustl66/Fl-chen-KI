@@ -9,7 +9,7 @@ plate_data = [
 ]
 
 # Große Fläche (Breite, Höhe)
-large_area = (3, 3)
+large_area = (8, 7)
 
 def overlaps(x, y, w, h, placed):
     """Überprüft, ob ein Rechteck an (x,y) mit Breite w und Höhe h mit bereits platzierten Rechtecken überlappt."""
@@ -115,14 +115,15 @@ def plot_combination(large_area, combination):
             showgrid=False,
             zeroline=False,
             title="Breite (m)",
-            title_font=dict(size=16, family="Arial")
+            title_font=dict(size=16, family="Arial"),
         ),
         yaxis=dict(
             range=[0, large_area[1]],
             showgrid=False,
             zeroline=False,
             title="Höhe (m)",
-            title_font=dict(size=16, family="Arial")
+            title_font=dict(size=16, family="Arial"),
+            scaleanchor="x"  # Stellt sicher, dass x- und y-Skalierung gleich sind
         ),
         plot_bgcolor="#f4f7fb",
         paper_bgcolor="#f4f7fb",
