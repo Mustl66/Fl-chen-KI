@@ -21,94 +21,88 @@ def overlaps(x, y, w, h, placed):
 def bottom_left_pack(large_area, plate_data):
     """
     Platziert Platten in der großen Fläche mit einer Bottom-Left-Heuristik.
-    Für jeden Kandidaten wird geprüft, ob eine Platte (in beiden Orientierungen) dort platziert werden kann.
-    Neue Kandidatenpositionen werden bei jeder Platzierung generiert.
+    Es wird von jedem Platten-Typ (inklusive beider Orientierungen) als unendlich viele Exemplare ausgegangen,
+    sodass so viele Platten wie möglich platziert werden.
     """
     large_width, large_height = large_area
-    placed = []  # Liste der platzierten Platten: (Name, x, y, Breite, Höhe)
+    placed = []         # Liste der platzierten Platten: (Name, x, y, Breite, Höhe)
     candidates = [(0, 0)]  # Startposition
 
-    # Solange es Kandidaten gibt, an denen noch etwas platziert werden kann
     while True:
         best_placement = None
         best_candidate = None
         best_value = None  # Bewertung: (y, x) – niedrigste y hat Priorität, dann x
 
-        # Für jede Kandidatenposition prüfen wir alle Platten (inklusive Rotation)
+        # Über alle Kandidatenpositionen und alle Platten (in beiden Orientierungen) iterieren
         for candidate in candidates:
             cx, cy = candidate
             for plate in plate_data:
-                # Probiere beide Orientierungen
                 for rotated in [False, True]:
                     p_name, (w, h) = plate if not rotated else (plate[0], (plate[1][1], plate[1][0]))
-                    # Prüfe, ob die Platte in der großen Fläche passt
+                    # Prüfen, ob die Platte in die Fläche passt
                     if cx + w <= large_width and cy + h <= large_height:
-                        # Prüfe Überlappung mit bereits platzierten Platten
+                        # Prüfen, ob es eine Überlappung gibt
                         if not overlaps(cx, cy, w, h, placed):
-                            candidate_value = (cy, cx)  # "Bottom-Left": zuerst niedrigste y, dann niedrigste x
+                            candidate_value = (cy, cx)  # "Bottom-Left": erst niedrigste y, dann niedrigste x
                             if best_value is None or candidate_value < best_value:
                                 best_value = candidate_value
                                 best_placement = (p_name, cx, cy, w, h)
                                 best_candidate = candidate
 
-        # Falls keine weitere Platte platziert werden kann, beenden
+        # Keine weitere Platte passt
         if best_placement is None:
             break
         else:
-            # Platte platzieren
             placed.append(best_placement)
-            # Entferne die benutzte Kandidatenposition
+            # Entferne die Kandidatenposition, an der gerade etwas platziert wurde
             if best_candidate in candidates:
                 candidates.remove(best_candidate)
-            # Neue Kandidatenpositionen generieren:
+            # Neue Kandidatenpositionen generieren: rechts und oberhalb der platzierten Platte
             new_positions = [
-                (best_placement[1] + best_placement[3], best_placement[2]),  # rechts neben der Platte
-                (best_placement[1], best_placement[2] + best_placement[4])   # oberhalb der Platte
+                (best_placement[1] + best_placement[3], best_placement[2]),
+                (best_placement[1], best_placement[2] + best_placement[4])
             ]
             for pos in new_positions:
                 if pos not in candidates:
                     candidates.append(pos)
-            # Optionale Bereinigung: Entferne Kandidaten, die bereits von einer platzierten Platte überdeckt werden
+            # Entferne Kandidaten, die innerhalb bereits platzierter Platten liegen
             candidates = [pos for pos in candidates
                           if not any(pos[0] >= p[1] and pos[0] < p[1] + p[3] and
                                      pos[1] >= p[2] and pos[1] < p[2] + p[4] for p in placed)]
-            # Sortiere Kandidaten, sodass die am weitesten links und unten zuerst kommen
+            # Sortiere Kandidaten (zuerst unten, dann links)
             candidates.sort(key=lambda pos: (pos[1], pos[0]))
     return placed
 
 def plot_combination(large_area, combination):
-    """Visualisiert die Anordnung der Platten in der großen Fläche."""
+    """Visualisiert die Anordnung der Platten in der großen Fläche inklusive Beschriftung und Abmessungen."""
     fig = go.Figure()
     colors = ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', '#858796']
     for i, (plate_name, x, y, w, h) in enumerate(combination):
+        # Zeichne die Platte als Polygon
         fig.add_trace(go.Scatter(
             x=[x, x+w, x+w, x, x],
             y=[y, y, y+h, y+h, y],
             fill="toself",
             fillcolor=colors[i % len(colors)],
             line=dict(color="black", width=2),
-            name=plate_name,
-            text=plate_name,
-            hoverinfo="text",
             showlegend=False
         ))
-        # Bezeichnung in der Mitte der Platte
+        # In der Mitte der Platte: Plattenname und Maße (Breite x Höhe)
         fig.add_trace(go.Scatter(
             x=[x + w/2],
             y=[y + h/2],
-            text=[plate_name],
+            text=[f"{plate_name}\n{w:.2f} x {h:.2f}"],
             mode='text',
             showlegend=False,
             textfont=dict(size=18, color="black")
         ))
 
-    # Darstellung der großen Fläche mit roter Umrandung
+    # Zeichne die Umrandung der großen Fläche in Rot
     fig.add_trace(go.Scatter(
         x=[0, large_area[0], large_area[0], 0, 0],
         y=[0, 0, large_area[1], large_area[1], 0],
         fill="none",
         line=dict(color="red", width=4),
-        name="Große Fläche Umrandung",
         showlegend=False
     ))
 
@@ -132,16 +126,16 @@ def plot_combination(large_area, combination):
         ),
         plot_bgcolor="#f4f7fb",
         paper_bgcolor="#f4f7fb",
-        showlegend=True,
+        showlegend=False,
     )
     fig.show()
 
 
-# Berechnung der verbesserten Anordnung
+# Berechnung der Anordnung (hier werden die Platten beliebig oft platziert, sofern sie passen)
 placed_combination = bottom_left_pack(large_area, plate_data)
 print("Verbesserte Kombination:", placed_combination)
 
-# Berechnung des Flächenanteils, der abgedeckt ist
+# Berechnung des abgedeckten Flächenanteils
 area_covered = sum(w * h for (_, _, _, w, h) in placed_combination)
 total_area = large_area[0] * large_area[1]
 coverage_percentage = (area_covered / total_area) * 100
